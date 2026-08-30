@@ -1,0 +1,74 @@
+{
+  "name": "@jmfirth/opencode-messaging",
+  "version": "0.1.0",
+  "description": "Cross-session messaging for OpenCode 2 — let agent sessions see, read, message, and spawn each other.",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode2",
+    "messaging",
+    "agents",
+    "multi-agent"
+  ],
+  "license": "MIT",
+  "author": "jmfirth",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jmfirth/opencode-messaging.git"
+  },
+  "homepage": "https://github.com/jmfirth/opencode-messaging#readme",
+  "bugs": "https://github.com/jmfirth/opencode-messaging/issues",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tui": "./src/tui.tsx"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src script test",
+    "lint:fix": "oxlint --fix src script test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:related": "vitest related --run",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
+    "smoke": "node --experimental-strip-types script/smoke.ts",
+    "prepare": "husky",
+    "install:dev": "node --experimental-strip-types script/sync.ts",
+    "uninstall:dev": "node --experimental-strip-types script/sync.ts --remove",
+    "dev": "node --experimental-strip-types script/dev.ts"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "oxlint --fix",
+      "prettier --write",
+      "vitest related --run"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=0.0.0-beta-18684"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "0.0.0-beta-18684",
+    "@types/node": "^22.20.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
+    "oxlint": "^1.6.0",
+    "prettier": "^3.6.2",
+    "solid-js": "^1.9.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
