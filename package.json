@@ -21,7 +21,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tui": "./src/tui.tsx"
+    "./tui": "./src/tui.js"
   },
   "files": [
     "src",
@@ -32,6 +32,8 @@
     "access": "public"
   },
   "scripts": {
+    "compile:tui": "node script/compile-tui.mjs",
+    "check:tui": "node script/compile-tui.mjs --check",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src script test",
     "lint:fix": "oxlint --fix src script test",
@@ -40,7 +42,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:related": "vitest related --run",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
+    "check": "npm run check:tui && npm run typecheck && npm run lint && npm run format:check && npm run test",
     "smoke": "node --experimental-strip-types script/smoke.ts",
     "hooks:install": "husky",
     "install:dev": "node --experimental-strip-types script/sync.ts",
@@ -61,8 +63,11 @@
     "@opencode-ai/plugin": ">=0.0.0-beta-18684"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-typescript": "^7.27.1",
     "@opencode-ai/plugin": "0.0.0-beta-18684",
     "@types/node": "^22.20.1",
+    "babel-preset-solid": "^1.9.12",
     "husky": "^9.1.7",
     "lint-staged": "^15.5.2",
     "oxlint": "^1.6.0",

@@ -1,5 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
   "categories": { "correctness": "error", "suspicious": "warn" },
+  "ignorePatterns": ["src/tui.js"],
   "env": { "node": true, "es2024": true }
 }

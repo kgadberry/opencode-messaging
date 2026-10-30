@@ -167,14 +167,17 @@ all of it or it denies nothing.
 
 ```bash
 npm run hooks:install # enable pre-commit hooks after npm ci
+npm run compile:tui   # regenerate src/tui.js after editing tui.tsx
 npm run dev           # install into ~/.config/opencode and re-sync on save
-npm run check         # typecheck + lint + format:check + test
+npm run check         # compiled TUI freshness + typecheck + lint + format:check + test
 npm run smoke         # exercise the live daemon (no model tokens spent)
 ```
 
 Hook setup is explicit: a `prepare` lifecycle script makes npm prepare Git dependencies,
-which fails in the packaged OpenCode 2.2.2 installer. The published TypeScript entrypoints
-need no build or preparation step.
+which fails in the packaged OpenCode 2.2.2 installer. The server ships TypeScript; the
+TUI ships checked-in JavaScript compiled for Solid/OpenTUI because the host skips JSX
+transformation inside `node_modules`. Consumers need no build or preparation step.
+Commit `src/tui.js` alongside TUI source changes; `npm run check` checks its freshness.
 
 `npm run dev` **copies** rather than symlinks, and that is load-bearing. OpenCode imports
 each plugin entry through its path with a cache-busting `?mtime=` query, which stops the
