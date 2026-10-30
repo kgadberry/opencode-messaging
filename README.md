@@ -166,10 +166,15 @@ all of it or it denies nothing.
 ## Development
 
 ```bash
-npm run dev       # install into ~/.config/opencode and re-sync on save
-npm run check     # typecheck + lint + format:check + test
-npm run smoke     # exercise the live daemon (no model tokens spent)
+npm run hooks:install # enable pre-commit hooks after npm ci
+npm run dev           # install into ~/.config/opencode and re-sync on save
+npm run check         # typecheck + lint + format:check + test
+npm run smoke         # exercise the live daemon (no model tokens spent)
 ```
+
+Hook setup is explicit: a `prepare` lifecycle script makes npm prepare Git dependencies,
+which fails in the packaged OpenCode 2.2.2 installer. The published TypeScript entrypoints
+need no build or preparation step.
 
 `npm run dev` **copies** rather than symlinks, and that is load-bearing. OpenCode imports
 each plugin entry through its path with a cache-busting `?mtime=` query, which stops the

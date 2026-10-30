@@ -42,7 +42,7 @@
     "test:related": "vitest related --run",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
     "smoke": "node --experimental-strip-types script/smoke.ts",
-    "prepare": "husky",
+    "hooks:install": "husky",
     "install:dev": "node --experimental-strip-types script/sync.ts",
     "uninstall:dev": "node --experimental-strip-types script/sync.ts --remove",
     "dev": "node --experimental-strip-types script/dev.ts"
