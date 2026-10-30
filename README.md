@@ -107,6 +107,11 @@ All optional, under the plugin's own options key:
 project until you say so. `peer_spawn` is deliberately _not_ bound by it — starting your
 own session somewhere else interrupts nobody.
 
+Session discovery follows pagination, and the caller is resolved directly by ID.
+If its directory cannot be resolved, discovery and sending fail closed rather than
+falling back to every project. Same-directory delivery also rejects recipients whose
+directory is missing.
+
 ### Permissions
 
 Standard OpenCode rules, under the `permissions` key (plural — `permission` is a legacy
@@ -120,6 +125,21 @@ v1 key and is silently ignored):
   ],
 }
 ```
+
+Every protected tool calls `permission.assert` before reading a transcript, sending a
+message, or creating a session. `ask` waits for approval; a denial stops the operation.
+Permission resources are:
+
+| Tool             | Action      | Resource                            |
+| ---------------- | ----------- | ----------------------------------- |
+| `peer_read`      | `peer_read` | Target session ID                   |
+| `peer_send`      | `peer_send` | Target session ID                   |
+| `peer_broadcast` | `peer_send` | Every existing target session ID    |
+| `peer_spawn`     | `peer_send` | Canonical absolute target directory |
+
+Broadcast approval covers the whole batch before any message is sent. Rejecting one
+recipient blocks the batch. Saved approvals use those exact resources, not `*`.
+`peer_list` remains permission-free and returns session metadata, not transcripts.
 
 All three sending verbs share the single `peer_send` action, the way `edit`, `write` and
 `apply_patch` share `edit`. This is not tidiness — during development, denying only

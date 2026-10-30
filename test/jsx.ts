@@ -5,6 +5,9 @@
  * the registration side effects inside one; host elements collapse to a plain
  * record, since nothing here paints anything.
  */
+// eslint-disable-next-line unicorn/require-module-specifiers -- Required for declare global.
+export {}
+
 declare global {
   // eslint-disable-next-line no-var
   var __jsx: (type: unknown, props?: Record<string, unknown>) => unknown

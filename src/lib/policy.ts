@@ -42,14 +42,12 @@ export function assertDeliverable(ctx: OptionsSource, self: SessionLike | undefi
   const rules = policy(ctx)
   if (rules.accept === "none")
     throw new Error('peer messaging is disabled — set the opencode-messaging "accept" option to enable it')
-  if (
-    rules.accept === "same-directory" &&
-    self?.location?.directory &&
-    target?.location?.directory !== self.location.directory
-  )
+  if (rules.accept === "same-directory" && (!self?.location?.directory || !target.location?.directory))
+    throw new Error("cannot enforce same-directory messaging: sender or recipient directory is unknown")
+  if (rules.accept === "same-directory" && target.location?.directory !== self?.location?.directory)
     throw new Error(
       `${target.id} works in ${target.location?.directory ?? "another directory"}, outside this session's ` +
-        `${self.location.directory}. opencode-messaging only messages sessions in the same directory by default; ` +
+        `${self?.location?.directory}. opencode-messaging only messages sessions in the same directory by default; ` +
         'set its "accept" option to "any" to allow cross-directory messages.',
     )
 }

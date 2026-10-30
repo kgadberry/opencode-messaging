@@ -6,7 +6,7 @@
  * think it is, that its two undocumented read endpoints still return the
  * shapes we parse, and that both plugin halves register the surface a user
  * expects. It spends no model tokens: tools are invoked directly with a stub
- * context, so the only work the daemon does is answer two GETs.
+ * context, so the only work the daemon does is answer read-only GETs.
  *
  * Run it after upgrading opencode2 — a shape change in `/api/session` or
  * `/api/session/active` is exactly the kind of break that unit tests cannot
@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 import process from "node:process"
+import type { ToolContext } from "../src/lib/types.ts"
 
 const repo = path.resolve(import.meta.dirname, "..")
 const service = path.join(
@@ -96,7 +97,7 @@ interface Registered {
   name: string
   description: string
   options?: { permission?: string }
-  execute: (input: any, context: { sessionID: string; agent: string }) => Promise<{ content: string }>
+  execute: (input: any, context: ToolContext) => Promise<{ content: string }>
 }
 
 const tools = new Map<string, Registered>()
@@ -112,6 +113,11 @@ await check("setup() registers its tools", async () => {
     session: {
       create: async () => ({ id: "ses_stub" }),
       synthetic: async () => undefined,
+    },
+    permission: {
+      assert: async () => {
+        throw new Error("smoke test must not invoke protected operations")
+      },
     },
   })
   return [...tools.keys()].join(", ")
@@ -139,7 +145,8 @@ await check("send verbs share the peer_send permission action", () => {
 // the HTTP reads, the directory filter and the formatting all run for real.
 await check("peer_list executes against the live service", async () => {
   const self = allSessions[0]
-  const caller = { sessionID: self?.id ?? "ses_none", agent: "build" }
+  assert(self, "create a session before running the smoke test")
+  const caller = { sessionID: self.id, agent: "build", messageID: "msg_smoke", id: "call_smoke" }
   const result = await tools.get("peer_list")!.execute({ all: true }, caller)
   assert(typeof result.content === "string" && result.content.length > 0, "empty result")
   assert(!("output" in result), "tools must return content only — output without a schema is rejected")
@@ -147,7 +154,7 @@ await check("peer_list executes against the live service", async () => {
 })
 
 await check("peer_read refuses to read the calling session", async () => {
-  const caller = { sessionID: "ses_self", agent: "build" }
+  const caller = { sessionID: "ses_self", agent: "build", messageID: "msg_smoke", id: "call_smoke" }
   await tools
     .get("peer_read")!
     .execute({ session: "ses_self" }, caller)

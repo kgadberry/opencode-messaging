@@ -59,12 +59,15 @@ describe("assertDeliverable", () => {
     expect(() => assertDeliverable(ctx, here, far)).toThrow(/peer messaging is disabled/)
   })
 
-  it("allows delivery when the sender's own directory is unknown", () => {
-    expect(() => assertDeliverable({}, undefined, far)).not.toThrow()
-    expect(() => assertDeliverable({}, { id: "ses_self" }, far)).not.toThrow()
+  it("rejects delivery when the sender's own directory is unknown", () => {
+    expect(() => assertDeliverable({}, undefined, far)).toThrow(/directory/)
+    expect(() => assertDeliverable({}, { id: "ses_self" }, far)).toThrow(/directory/)
+    expect(() => assertDeliverable({}, { id: "ses_self", location: { directory: "" } }, far)).toThrow(
+      /directory/,
+    )
   })
 
-  it("names 'another directory' when the target has none", () => {
-    expect(() => assertDeliverable({}, here, { id: "ses_x" })).toThrow(/ses_x works in another directory/)
+  it("rejects delivery when the target has no directory", () => {
+    expect(() => assertDeliverable({}, here, { id: "ses_x" })).toThrow(/directory/)
   })
 })

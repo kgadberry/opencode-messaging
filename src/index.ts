@@ -33,7 +33,7 @@
  * Replies are ordinary peer_send calls in the other direction; every message
  * carries its sender's session ID so the recipient can answer.
  */
-import { readFileSync, statSync } from "node:fs"
+import { readFileSync, realpathSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { envelope, provenance } from "./lib/envelope.ts"
@@ -41,13 +41,13 @@ import { ago, basename } from "./lib/format.ts"
 import { assertDeliverable, policy } from "./lib/policy.ts"
 import { rateLimit } from "./lib/rate.ts"
 import { render } from "./lib/transcript.ts"
-import type { SenderContext, SessionLike } from "./lib/types.ts"
+import type { SessionLike, ToolContext } from "./lib/types.ts"
 
 /**
  * The slice of the plugin context opencode-messaging actually uses.
  *
  * The host's own `Plugin.Context` is far wider and its tool-draft generics are
- * effect-schema derived; declaring the four members this plugin touches keeps
+ * effect-schema derived; declaring the members this plugin touches keeps
  * our call sites checked without pretending to restate the host's API.
  */
 interface ToolDraft {
@@ -56,7 +56,7 @@ interface ToolDraft {
     description: string
     options?: { codemode?: boolean; permission?: string }
     input: Record<string, unknown>
-    execute: (input: any, context: SenderContext) => Promise<{ content: string }>
+    execute: (input: any, context: ToolContext) => Promise<{ content: string }>
   }): void
 }
 
@@ -66,6 +66,16 @@ interface PluginContext {
   readonly session: {
     create: (input: Record<string, unknown>) => Promise<{ id?: string; data?: { id?: string } }>
     synthetic: (input: Record<string, unknown>) => Promise<unknown>
+  }
+  readonly permission: {
+    assert: (input: {
+      sessionID: string
+      agent: string
+      source: { type: "tool"; messageID: string; id: string }
+      action: string
+      resources: string[]
+      save: string[]
+    }) => Promise<void>
   }
 }
 
@@ -81,10 +91,8 @@ type BroadcastTarget = SessionLike & { readonly missing?: boolean }
 const PEER_LIMIT = 40
 const TOTAL_CHARS = 12_000
 
-// The session list and message history are not on the plugin's session domain,
-// so those two reads go over HTTP to the same background service this plugin is
-// running inside. The registration file is written by `opencode2 serve --service`
-// and is re-read per call so a service restart does not strand the plugin.
+// Read session metadata and history from the background service. Re-read its
+// registration per call so a restart does not strand the plugin.
 async function api(path: string) {
   const service = (() => {
     try {
@@ -107,7 +115,33 @@ async function api(path: string) {
   return response.json()
 }
 
-const sessions = (): Promise<SessionLike[]> => api("/api/session").then((body) => body.data ?? [])
+async function sessions(): Promise<SessionLike[]> {
+  const all = new Map<string, SessionLike>()
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const body = await api(`/api/session${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`)
+    if (!Array.isArray(body.data)) throw new Error("invalid session list from the opencode service")
+    for (const info of body.data as SessionLike[]) all.set(info.id, info)
+    cursor = body.cursor?.next
+    if (cursor) {
+      if (typeof cursor !== "string" || seen.has(cursor))
+        throw new Error("invalid or repeated session cursor from the opencode service")
+      seen.add(cursor)
+    }
+  } while (cursor)
+  return [...all.values()]
+}
+
+// Never infer the caller's directory from a possibly incomplete list page.
+async function session(id: string): Promise<SessionLike> {
+  const body = await api(`/api/session/${encodeURIComponent(id)}`)
+  const info: SessionLike | undefined = body.data
+  if (info?.id !== id) throw new Error(`cannot resolve session ${id}`)
+  if (typeof info.location?.directory !== "string" || !isAbsolute(info.location.directory))
+    throw new Error(`cannot determine directory for session ${id}`)
+  return info
+}
 
 // `/api/session/active` returns { data: { [sessionID]: { type: "running" } } }.
 const running = (): Promise<Record<string, unknown>> =>
@@ -118,6 +152,16 @@ const running = (): Promise<Record<string, unknown>> =>
 export default {
   id: "opencode-messaging",
   setup: async (ctx: PluginContext) => {
+    const authorize = (context: ToolContext, action: "peer_read" | "peer_send", resources: string[]) =>
+      ctx.permission.assert({
+        sessionID: context.sessionID,
+        agent: context.agent,
+        source: { type: "tool", messageID: context.messageID, id: context.id },
+        action,
+        resources,
+        save: resources,
+      })
+
     await ctx.tool.transform((tools: ToolDraft) => {
       tools.add({
         name: "peer_list",
@@ -138,16 +182,13 @@ export default {
             },
           },
         },
-        execute: async (input: { all?: boolean }, context: SenderContext) => {
-          const [all, active] = await Promise.all([sessions(), running()])
-          const self = all.find((s: SessionLike) => s.id === context.sessionID)
+        execute: async (input: { all?: boolean }, context: ToolContext) => {
+          const [all, active, self] = await Promise.all([sessions(), running(), session(context.sessionID)])
 
           const peers = all
             .filter((s: SessionLike) => s.id !== context.sessionID)
             .filter((s: SessionLike) => input.all || !s.parentID)
-            .filter(
-              (s: SessionLike) => input.all || !self || s.location?.directory === self.location?.directory,
-            )
+            .filter((s: SessionLike) => input.all || s.location?.directory === self.location?.directory)
             .sort((a: SessionLike, b: SessionLike) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
             .slice(0, PEER_LIMIT)
 
@@ -191,11 +232,12 @@ export default {
           },
           required: ["session"],
         },
-        execute: async (input: { session: string; limit?: number }, context: SenderContext) => {
+        execute: async (input: { session: string; limit?: number }, context: ToolContext) => {
           if (input.session === context.sessionID)
             throw new Error("peer_read cannot target the current session; you already have its history")
 
           const limit = Math.min(Math.max(Math.floor(input.limit ?? 10), 1), 50)
+          await authorize(context, "peer_read", [input.session])
           const body = await api(
             `/api/session/${encodeURIComponent(input.session)}/message?limit=${limit}&order=desc`,
           )
@@ -253,18 +295,15 @@ export default {
         },
         execute: async (
           input: { to: string; message: string; delivery?: "queue" | "steer" },
-          context: SenderContext,
+          context: ToolContext,
         ) => {
           if (input.to === context.sessionID) throw new Error("peer_send cannot target the current session")
           if (!input.message?.trim()) throw new Error("peer_send requires a non-empty message")
 
           const delivery = input.delivery === "steer" ? "steer" : "queue"
-          const all = await sessions()
-          const target = all.find((s: SessionLike) => s.id === input.to)
-          if (!target) throw new Error(`no session with id ${input.to} — call peer_list for current ids`)
-
-          const self = all.find((s: SessionLike) => s.id === context.sessionID)
+          const [self, target] = await Promise.all([session(context.sessionID), session(input.to)])
           assertDeliverable(ctx, self, target)
+          await authorize(context, "peer_send", [target.id])
           rateLimit(ctx, "send", context.sessionID)
           const from = basename(self?.location?.directory ?? "")
 
@@ -316,13 +355,12 @@ export default {
         },
         execute: async (
           input: { message: string; to?: string[]; delivery?: "queue" | "steer" },
-          context: SenderContext,
+          context: ToolContext,
         ) => {
           if (!input.message?.trim()) throw new Error("peer_broadcast requires a non-empty message")
 
           const delivery = input.delivery === "steer" ? "steer" : "queue"
-          const all = await sessions()
-          const self = all.find((s: SessionLike) => s.id === context.sessionID)
+          const [all, self] = await Promise.all([sessions(), session(context.sessionID)])
 
           const targets: BroadcastTarget[] = (
             input.to?.length
@@ -331,7 +369,7 @@ export default {
                   (s: SessionLike) =>
                     s.id !== context.sessionID &&
                     !s.parentID &&
-                    (!self || s.location?.directory === self.location?.directory),
+                    s.location?.directory === self.location?.directory,
                 )
           ).filter((s: BroadcastTarget) => s.id !== context.sessionID)
 
@@ -343,6 +381,10 @@ export default {
               `peer_broadcast would reach ${targets.length} sessions, above the configured fanout limit of ${limit}`,
             )
 
+          // Authorize the whole batch before sending anything; permission
+          // rejections must propagate, not become per-recipient error text.
+          const recipients = targets.filter((target) => !target.missing).map((target) => target.id)
+          if (recipients.length) await authorize(context, "peer_send", recipients)
           rateLimit(ctx, "broadcast", context.sessionID)
           const from = basename(self?.location?.directory ?? "")
           const results = await Promise.all(
@@ -397,7 +439,7 @@ export default {
         },
         execute: async (
           input: { directory: string; message: string; title?: string; agent?: string },
-          context: SenderContext,
+          context: ToolContext,
         ) => {
           if (!policy(ctx).spawn) throw new Error("peer_spawn is disabled by configuration")
           if (!input.message?.trim()) throw new Error("peer_spawn requires a non-empty message")
@@ -405,8 +447,11 @@ export default {
           if (!statSync(input.directory, { throwIfNoEntry: false })?.isDirectory())
             throw new Error(`no such directory: ${input.directory}`)
 
+          const directory = realpathSync(input.directory)
+          const self = await session(context.sessionID)
+          await authorize(context, "peer_send", [directory])
           const created = await ctx.session.create({
-            location: { directory: input.directory },
+            location: { directory },
             ...(input.title ? { title: input.title } : {}),
             ...(input.agent ? { agent: input.agent } : {}),
           })
@@ -414,7 +459,6 @@ export default {
           const id = created?.id ?? created?.data?.id
           if (!id) throw new Error("session was created but no id was returned")
 
-          const self = (await sessions()).find((s: SessionLike) => s.id === context.sessionID)
           const from = basename(self?.location?.directory ?? "")
 
           await ctx.session.synthetic({
@@ -428,7 +472,7 @@ export default {
 
           return {
             content:
-              `Spawned ${id} in ${input.directory}${input.agent ? ` on the ${input.agent} agent` : ""} and sent ` +
+              `Spawned ${id} in ${directory}${input.agent ? ` on the ${input.agent} agent` : ""} and sent ` +
               "the opening instruction. It is a normal session — you can peer_read it, and its reply " +
               "will arrive here as a message.",
           }

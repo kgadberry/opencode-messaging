@@ -23,6 +23,12 @@ export interface SenderContext {
   readonly agent: string
 }
 
+/** Tool-call provenance attached to permission prompts. */
+export interface ToolContext extends SenderContext {
+  readonly messageID: string
+  readonly id: string
+}
+
 /** Plugin options, as configured for opencode-messaging. */
 export interface OptionsSource {
   readonly options?: Record<string, unknown>
